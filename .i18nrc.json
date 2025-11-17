@@ -1,0 +1,7 @@
+{
+  "prefix": "opensearchCoreapp",
+  "paths": {
+    "opensearchCoreapp": "."
+  },
+  "translations": ["translations/ja-JP.json"]
+}
