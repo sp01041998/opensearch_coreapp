@@ -6,5 +6,10 @@
     "build": "yarn plugin-helpers build",
     "plugin-helpers": "../../scripts/use_node ../../scripts/plugin_helpers",
     "osd": "../../scripts/use_node ../../scripts/osd"
+  },
+  "dependencies": {
+    "aws4": "^1.13.2",
+    "lodash": "^4.17.21",
+    "@aws-sdk/client-cognito-identity-provider":  "^3.911.0"
   }
 }

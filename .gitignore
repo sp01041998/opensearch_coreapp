@@ -1,2 +1,34 @@
-/build
-/target
+# Ignore everything
+*
+
+# But allow directories
+!*/
+
+# Allow all files inside this plugin
+!plugins/opensearch_coreapp/**
+
+# Node modules
+node_modules/
+
+# Build artifacts
+build/
+dist/
+target/
+.optimize/
+.kbn-optimizer-cache/
+
+# Logs
+*.log
+
+# TS build caches
+tsconfig.tsbuildinfo
+
+# Environment
+.env
+.env.*
+
+# IDE junk
+.vscode/
+.idea/
+*.swp
+*.swo

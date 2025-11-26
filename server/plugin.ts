@@ -1,8 +1,9 @@
-import { CoreSetup, CoreStart, Plugin } from 'opensearch-dashboards/server';
-import { registerRootRedirectRoute } from './routes/root_redirect';
-// import { registerFieldsForWildcardRoute } from './routes/fields_for_wildcard';
+import { Plugin } from 'opensearch-dashboards/server';
+import { createCoreAppSOWrapper } from './saved_objects/so_wrapper';
 import { registerProxySavedObjectsRoute } from './routes/proxy_saved_objects';
-// import { registerNotificationsRoutes } from './routes/notifications';
+// import { registerRootRedirectRoute } from './routes/root_redirect';
+// import { createWrappedSearchStrategy } from './saved_objects/search_strategy_wrapper';
+import { awsTenantSearchStrategy } from './saved_objects/search_strategy_wrapper';
 
 export class OpensearchCoreappPlugin implements Plugin {
   setup(core, plugins) {
@@ -14,11 +15,27 @@ export class OpensearchCoreappPlugin implements Plugin {
       })
     );
 
+      if (!plugins.data) {
+      throw new Error("Data plugin is required");
+    }
+
+    const search = plugins.data.search;
+    search.registerSearchStrategy("awsTenantSearch", awsTenantSearchStrategy);
+
+
+    core.savedObjects.addClientWrapper(
+      Number.MAX_SAFE_INTEGER,
+      'coreappAuth',
+      createCoreAppSOWrapper
+    );
+
     const router = core.http.createRouter();
     registerProxySavedObjectsRoute(router);
+    // registerRootRedirectRoute(core);
   }
 
-  start() {}
-  stop() {}
+  start() { }
+  // stop() {}
 }
+
 

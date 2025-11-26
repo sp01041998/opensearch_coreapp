@@ -1,49 +1,61 @@
-import { IRouter } from 'opensearch-dashboards/server';
-import dotenv from 'dotenv';
-import { validateAccessToken, CurrentUser } from '../utils/auth';
-import { checkIframeAndReferer } from '../utils/request_guards';
+import psl from 'psl';
+import { ALLOWED_DOMAINS } from '../../common/constant';
+import { validateAccessToken } from '../services/cognito_service';
+import { getTenantAccountsByTenantId } from '../services/tenant_validation_service';
 
-// adjust these imports to match where your helpers live
-import { getTenantAccountsByTenantId } from '../../../../src/core/utils/dbUtils';
-import { AQ_CAN_EDIT_ROLES } from '../../../../src/core/common/constants';
-import { getDashboardsByTenantId } from '../../../../src/core/utils/dbUtils';
-import { callESApi } from '../../../../src/core/common/esApi';
-
-dotenv.config();
 const REGION = process.env.REGION;
-const DASHBOARD_COOKIE_PATH = '/aq-dashboard';
 
-export function registerRootRedirectRoute(router: IRouter) {
-  router.get(
-    {
-      path: '/aq-default',
-      validate: false,
-      options: { authRequired: false },
-    },
+export function registerRootRedirectRoute(core) {
+
+  const router = core.http.createRouter('/');
+
+  router.get({ path: '/', validate: false },
     async (context, req, res) => {
-      // iframe + referer checks
-      const guard = checkIframeAndReferer(req.headers);
-      if (!guard.ok) {
-        return res.forbidden({ body: guard.errorBody });
+      // 1. IFRAME CHECK
+      const fetchDest = req.headers['sec-fetch-dest'] || '';
+      const isIframe = fetchDest === 'iframe';
+
+      const refererUrl = Array.isArray(req.headers?.referer)
+        ? req.headers.referer[0]
+        : req.headers?.referer || '';
+
+      let refererDomain = '';
+      if (refererUrl) {
+        const hostname = new URL(refererUrl).hostname;
+        const parsed = psl.parse(hostname);
+        refererDomain = parsed?.domain || '';
       }
 
-      const idToken = (req.query as any)?.idToken as string | undefined;
-      const accessToken = (req.query as any)?.accessToken as string | undefined;
-      let tenantId = (req.query as any)?.tenantId as string | undefined;
-      const unfilteredTenantId = tenantId;
-      const currentUser: CurrentUser = { email: '', role: '' };
-
-      // validate token
-      const valid = await validateAccessToken(accessToken, currentUser);
-      if (!valid || !currentUser.email) {
-        return res.unauthorized({
-          body: { message: 'Invalid Access Token or Missing Email' },
+      if (!isIframe) {
+        return res.forbidden({
+          body: { message: 'Direct Access Denied' },
         });
       }
 
-      if (!idToken || !accessToken) {
+      if (refererDomain && !ALLOWED_DOMAINS.includes(refererDomain)) {
+        return res.forbidden({
+          body: { message: 'Invalid Referer' },
+        });
+      }
+
+      // 2. TOKEN EXTRACTION
+      const idToken = req.query?.idToken;
+      const accessToken = req.query?.accessToken;
+      let tenantId = req.query?.tenantId;
+      const unfilteredTenantId = tenantId;
+
+      const currentUser = { email: '', role: '' };
+
+      // validate Cognito access token
+      if (!(await validateAccessToken(accessToken, currentUser))) {
+        return res.unauthorized({
+          body: { message: 'Invalid Access Token' },
+        });
+      }
+
+      if (!idToken || !accessToken || !currentUser.email) {
         return res.badRequest({
-          body: { message: 'Missing Token(s)' },
+          body: { message: 'Missing Token or Email' },
         });
       }
 
@@ -53,47 +65,53 @@ export function registerRootRedirectRoute(router: IRouter) {
         });
       }
 
+      // 3. TENANT ACCOUNT VALIDATION
+      let tenantAccounts;
       try {
-        const tenantAccounts = await getTenantAccountsByTenantId({ tenantId });
-        if (!tenantAccounts) {
-          return res.badRequest({
-            body: { message: 'Account Details Not Found' },
-          });
-        }
-
-        const matchedUser = tenantAccounts.users.find(
-          (user: Record<string, any>) =>
-            user.email?.trim()?.toLowerCase() === currentUser.email?.trim()?.toLowerCase()
-        );
-
-        currentUser.role = matchedUser?.role ?? '';
-      } catch (error) {
-        console.error(error);
+        tenantAccounts = await getTenantAccountsByTenantId({ tenantId });
+      } catch {
         return res.badRequest({
           body: { message: 'Account Details Not Found' },
         });
       }
 
+      if (!tenantAccounts) {
+        return res.badRequest({
+          body: { message: 'Account Details Not Found' },
+        });
+      }
+
+      const matchedUser = tenantAccounts.users.find(
+        (u) => u.email?.trim()?.toLowerCase() === currentUser.email
+      );
+
+      currentUser.role = matchedUser?.role ?? '';
+
+      // 4. CLEAN TENANT ID
       if (tenantId.includes(`${REGION}:`)) {
         tenantId = tenantId.replace(`${REGION}:`, '');
       }
 
-      const basePath = context.core.http.basePath.get(req);
+      // 5. BUILD REDIRECT URL
+      const basePath = core.http.basePath.get(req);
       const url = `${basePath}/app/dashboards?idToken=${idToken}&accessToken=${accessToken}&tenantId=${tenantId}&email=${currentUser.email}`;
 
+      // 6. SET COOKIES AND REDIRECT
       return res.redirected({
         headers: {
           location: url,
           'set-cookie': [
-            `idToken=${idToken}; SameSite=Lax; Path=${DASHBOARD_COOKIE_PATH}; Max-Age=7200`,
-            `accessToken=${accessToken}; SameSite=Lax; Path=${DASHBOARD_COOKIE_PATH}; Max-Age=7200`,
-            `tenantId=${tenantId}; SameSite=Lax; Path=${DASHBOARD_COOKIE_PATH}; Max-Age=7200`,
-            `email=${currentUser.email}; SameSite=Lax; Path=${DASHBOARD_COOKIE_PATH}; Max-Age=7200`,
-            `role=${currentUser.role}; SameSite=Lax; Path=${DASHBOARD_COOKIE_PATH}; Max-Age=7200`,
-            `unfilteredTenantId=${unfilteredTenantId}; SameSite=Lax; Path=${DASHBOARD_COOKIE_PATH}; Max-Age=7200`,
+            `idToken=${idToken}; SameSite=Lax; Path=/aq-dashboard; Max-Age=7200`,
+            `accessToken=${accessToken}; SameSite=Lax; Path=/aq-dashboard; Max-Age=7200`,
+            `tenantId=${tenantId}; SameSite=Lax; Path=/aq-dashboard; Max-Age=7200`,
+            `email=${currentUser.email}; SameSite=Lax; Path=/aq-dashboard; Max-Age=7200`,
+            `role=${currentUser.role}; SameSite=Lax; Path=/aq-dashboard; Max-Age=7200`,
+            `unfilteredTenantId=${unfilteredTenantId}; SameSite=Lax; Path=/aq-dashboard; Max-Age=7200`,
           ],
         },
       });
     }
-  );
-}
+    )
+  }
+
+
