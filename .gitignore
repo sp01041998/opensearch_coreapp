@@ -1,34 +1,24 @@
-# Ignore everything
-*
-
-# But allow directories
-!*/
-
-# Allow all files inside this plugin
-!plugins/opensearch_coreapp/**
-
-# Node modules
+# Ignore Node dependencies
 node_modules/
 
-# Build artifacts
+# Ignore build artifacts
+target/
 build/
 dist/
-target/
-.optimize/
 .kbn-optimizer-cache/
 
 # Logs
 *.log
 
-# TS build caches
-tsconfig.tsbuildinfo
-
-# Environment
+# Environment files
 .env
 .env.*
+.DS_Store
 
-# IDE junk
-.vscode/
-.idea/
-*.swp
-*.swo
+# Optional: Ignore dependency lock files
+package-lock.json
+yarn.lock
+
+# Ignore OSD optimizer cache files
+.babel_register_cache.json
+.babel_plugin_cache.json

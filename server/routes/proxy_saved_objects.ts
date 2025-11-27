@@ -9,7 +9,6 @@ import { AQ_CAN_EDIT_ROLES } from '../../common/constant';
 
 dotenv.config();
 const REGION = process.env.REGION;
-const DASHBOARD_COOKIE_PATH = '/aq-dashboard';
 
 export function registerProxySavedObjectsRoute(router: IRouter) {
   router.get(
